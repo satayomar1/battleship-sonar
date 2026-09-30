@@ -89,7 +89,7 @@ const reducer = (state: GameState, action: Action): GameState => {
         ...state,
         enemyFleet: { board: outcome.board, ships: outcome.ships },
         playerMoves,
-        playerTurn: outcome.result === 'miss' && !won,
+        playerTurn: outcome.result !== 'miss' && !won,
         winner: won ? 'player' : null,
         phase: won ? 'game_over' : state.phase,
       };
