@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { generateFleet, allShipsSunk, type Fleet } from "../../engine/board";
 import { resolveShot } from "../../engine/shot";
 import { computeDebrief } from "../../engine/debrief";
@@ -8,6 +8,43 @@ import {
   localStats,
   recordFinishedMatch,
 } from "../matchArchive";
+
+// Lightweight Supabase client mock: enough surface for matchArchive
+// (auth.getSession + from("matches").insert). Defaults to null client, which
+// mirrors "Supabase not configured" and keeps the local-only tests as before.
+const fakeSupabase = vi.hoisted(() => ({
+  client: null as unknown,
+  session: null as { user: { id: string } } | null,
+  insertError: null as unknown,
+  inserts: [] as Array<Record<string, unknown>>,
+  fromTable: "",
+}));
+
+vi.mock("../supabase/client", () => ({
+  getSupabaseBrowserClient: () => fakeSupabase.client,
+}));
+
+function enableFakeSupabase(
+  userId: string | null,
+  insertError: unknown = null,
+) {
+  fakeSupabase.session = userId === null ? null : { user: { id: userId } };
+  fakeSupabase.insertError = insertError;
+  fakeSupabase.inserts = [];
+  fakeSupabase.fromTable = "";
+  fakeSupabase.client = {
+    auth: {
+      getSession: async () => ({ data: { session: fakeSupabase.session } }),
+    },
+    from: (table: string) => ({
+      insert: async (payload: Record<string, unknown>) => {
+        fakeSupabase.fromTable = table;
+        fakeSupabase.inserts.push(payload);
+        return { error: fakeSupabase.insertError };
+      },
+    }),
+  };
+}
 
 const store = new Map<string, string>();
 const windowStub = {
@@ -35,6 +72,7 @@ function playFullGame(): { fleet: Fleet; moves: MoveRecord[] } {
 describe("match archive: game over -> archive -> profile data", () => {
   beforeEach(() => {
     store.clear();
+    fakeSupabase.client = null;
     (globalThis as Record<string, unknown>).window = windowStub;
   });
 
@@ -64,7 +102,7 @@ describe("match archive: game over -> archive -> profile data", () => {
       new Date().toISOString().slice(0, 10),
     );
     expect(m.durationSeconds).toBeGreaterThanOrEqual(120);
-    // No Supabase env in tests -> local-only, no cloud sync attempted.
+    // No Supabase client in tests -> local-only, no cloud sync attempted.
     expect(m.synced).toBe(false);
 
     // Profile aggregation over the same archive.
@@ -121,5 +159,68 @@ describe("match archive: game over -> archive -> profile data", () => {
     const moves: MoveRecord[] = [{ x: 0, y: 0, result: "miss" }];
     expect(recordFinishedMatch("easy", "loss", moves, computeDebrief(moves), 123)).toBeNull();
     expect(store.has("sonar.io/matches/v1")).toBe(false);
+  });
+});
+
+describe("match archive: cloud sync", () => {
+  const USER_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+  beforeEach(() => {
+    store.clear();
+    fakeSupabase.client = null;
+    (globalThis as Record<string, unknown>).window = windowStub;
+  });
+
+  afterEach(() => {
+    delete (globalThis as Record<string, unknown>).window;
+  });
+
+  const oneMoveGame = (): { moves: MoveRecord[]; stats: ReturnType<typeof computeDebrief> } => {
+    const moves: MoveRecord[] = [{ x: 0, y: 0, result: "miss" }];
+    return { moves, stats: computeDebrief(moves) };
+  };
+
+  it("authenticated: insert carries the session user id as player_id", async () => {
+    enableFakeSupabase(USER_ID);
+    const { moves, stats } = oneMoveGame();
+    recordFinishedMatch("hard", "win", moves, stats, 777);
+
+    await vi.waitFor(() => expect(fakeSupabase.inserts).toHaveLength(1));
+    expect(fakeSupabase.fromTable).toBe("matches");
+    expect(fakeSupabase.inserts[0].player_id).toBe(USER_ID);
+    expect(fakeSupabase.inserts[0].mode).toBe("bot_hard");
+    expect(fakeSupabase.inserts[0].result).toBe("win");
+
+    await vi.waitFor(() => expect(loadLocalMatches()[0].synced).toBe(true));
+  });
+
+  it("unauthenticated: no insert, local record still works", async () => {
+    enableFakeSupabase(null);
+    const { moves, stats } = oneMoveGame();
+    const recorded = recordFinishedMatch("easy", "loss", moves, stats, 888);
+    expect(recorded).not.toBeNull();
+
+    await flush();
+    expect(fakeSupabase.inserts).toHaveLength(0);
+    const archive = loadLocalMatches();
+    expect(archive).toHaveLength(1);
+    expect(archive[0].synced).toBe(false);
+    expect(archive[0].result).toBe("loss");
+  });
+
+  it("cloud insert error: synced stays false and the local record survives", async () => {
+    enableFakeSupabase(USER_ID, { message: "new row violates row-level security policy" });
+    const { moves, stats } = oneMoveGame();
+    const recorded = recordFinishedMatch("normal", "win", moves, stats, 999);
+    expect(recorded).not.toBeNull();
+
+    await vi.waitFor(() => expect(fakeSupabase.inserts).toHaveLength(1));
+    await flush();
+    const archive = loadLocalMatches();
+    expect(archive).toHaveLength(1);
+    expect(archive[0].synced).toBe(false);
+    expect(archive[0].result).toBe("win");
+    expect(archive[0].totalShots).toBe(moves.length);
   });
 });

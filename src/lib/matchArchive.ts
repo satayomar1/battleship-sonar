@@ -54,6 +54,8 @@ async function syncMatchToCloud(match: StoredMatch) {
 
   const mode = `bot_${match.mode}`;
   const { error } = await supabase.from("matches").insert({
+    // RLS requires auth.uid() = player_id; the session user id is the JWT sub.
+    player_id: session.session.user.id,
     mode,
     result: match.result,
     total_shots: match.totalShots,
