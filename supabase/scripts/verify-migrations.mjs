@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Standalone verifier for supabase/migrations/0001_init.sql + 0002_security_fixes.sql.
+// Standalone verifier for migrations 0001 + 0002 + 0003.
 // Mirrors supabase/__tests__/security.test.ts 1:1, but runs in a single plain
 // Node process: this machine cannot fit a vitest worker (vite transform +
 // PGlite WASM) in free memory. Use `npm test` where vitest is runnable;
@@ -172,6 +172,8 @@ async function setup() {
 
   await db.exec(readMigration('0002_security_fixes.sql'));
   await db.exec(readMigration('0002_security_fixes.sql'));
+  await db.exec(readMigration('0003_live_security_alignment.sql'));
+  await db.exec(readMigration('0003_live_security_alignment.sql'));
 }
 
 // ============================================================================
@@ -179,34 +181,29 @@ async function setup() {
 // ============================================================================
 
 describe('0002 migration state', () => {
-  it('splits the profiles policy into per-command policies (no FOR ALL)', async () => {
+  it('has no client-facing profiles policies after 0003', async () => {
     const res = await runAsSuperuser(
       `select policyname, cmd from pg_policies
        where schemaname = 'public' and tablename = 'profiles'
        order by policyname`,
     );
-    assert.deepEqual(plain(res.rows), [
-      { policyname: 'profiles: delete own', cmd: 'DELETE' },
-      { policyname: 'profiles: insert own', cmd: 'INSERT' },
-      { policyname: 'profiles: public read', cmd: 'SELECT' },
-      { policyname: 'profiles: update own', cmd: 'UPDATE' },
-    ]);
+    assert.deepEqual(plain(res.rows), []);
   });
 
-  it('keeps the other policies from 0001 intact', async () => {
+  it('applies the final application policies after 0003', async () => {
     const res = await runAsSuperuser(
       `select tablename, policyname from pg_policies
-       where schemaname = 'public' and tablename in ('matches', 'moves', 'rooms', 'room_shots')
-       order by tablename`,
+       where schemaname = 'public'
+         and tablename in ('matches', 'moves', 'rooms', 'room_shots')
+       order by tablename, policyname`,
     );
     assert.deepEqual(plain(res.rows), [
-      { tablename: 'matches', policyname: 'matches: insert own, read own' },
-      { tablename: 'moves', policyname: 'moves: own rows only' },
+      { tablename: 'matches', policyname: 'matches: insert own' },
+      { tablename: 'matches', policyname: 'matches: select own' },
       { tablename: 'room_shots', policyname: 'room_shots: participants read, own insert blocked (RPC only)' },
       { tablename: 'rooms', policyname: 'rooms: participants read row' },
     ]);
   });
-
   it('grants authenticated column-level SELECT on rooms safe columns only', async () => {
     const res = await runAsSuperuser(
       `select column_name from information_schema.column_privileges
@@ -314,52 +311,118 @@ describe('0002 migration state', () => {
 // Profiles RLS
 // ============================================================================
 
-describe('profiles RLS after 0002', () => {
-  it('still allows public read of display names (anon and authenticated)', async () => {
-    const asAnon = await runAs('anon', null, 'select display_name from public.profiles where id = $1', [USER_A]);
-    assert.equal(asAnon.rows[0].display_name, 'Host A');
-
-    const asAuth = await runAs('authenticated', USER_C, 'select display_name from public.profiles where id = $1', [USER_A]);
-    assert.equal(asAuth.rows[0].display_name, 'Host A');
-  });
-
-  it('blocks deleting another user profile (the 0001 hole is closed)', async () => {
-    await runAs('authenticated', USER_C, 'delete from public.profiles where id = $1', [USER_A]);
-    const res = await runAsSuperuser('select count(*)::int as n from public.profiles where id = $1', [USER_A]);
-    assert.equal(res.rows[0].n, 1);
-  });
-
-  it('allows deleting own profile', async () => {
-    await runAs('authenticated', USER_D, 'delete from public.profiles where id = $1', [USER_D]);
-    const res = await runAsSuperuser('select count(*)::int as n from public.profiles where id = $1', [USER_D]);
-    assert.equal(res.rows[0].n, 0);
-  });
-
-  it('allows updating own profile and blocks updating others', async () => {
-    await runAs('authenticated', USER_A, "update public.profiles set display_name = 'Host A updated' where id = $1", [USER_A]);
-    let res = await runAsSuperuser('select display_name from public.profiles where id = $1', [USER_A]);
-    assert.equal(res.rows[0].display_name, 'Host A updated');
-
-    await runAs('authenticated', USER_C, "update public.profiles set display_name = 'hacked' where id = $1", [USER_A]);
-    res = await runAsSuperuser('select display_name from public.profiles where id = $1', [USER_A]);
-    assert.equal(res.rows[0].display_name, 'Host A updated');
-  });
-
-  it('allows inserting own profile and blocks inserting for others', async () => {
-    await runAsSuperuser('delete from public.profiles where id = $1', [USER_E]);
+describe('client least privilege after 0003', () => {
+  it('gives profiles no direct client grants and denies direct reads', async () => {
+    const grants = await runAsSuperuser(
+      `select grantee, privilege_type
+       from information_schema.role_table_grants
+       where table_schema = 'public'
+         and table_name = 'profiles'
+         and grantee in ('anon', 'authenticated')
+       order by grantee, privilege_type`,
+    );
+    assert.deepEqual(plain(grants.rows), []);
 
     await assertRejects(
-      () => runAs('authenticated', USER_C, 'insert into public.profiles (id) values ($1)', [USER_E]),
-      /row-level security/i,
-      'insert for other',
+      () => runAs('anon', null, 'select display_name from public.profiles where id = $1', [USER_A]),
+      /permission denied/i,
+      'anon profiles read',
     );
 
-    await runAs('authenticated', USER_E, 'insert into public.profiles (id) values ($1)', [USER_E]);
-    const res = await runAsSuperuser('select count(*)::int as n from public.profiles where id = $1', [USER_E]);
-    assert.equal(res.rows[0].n, 1);
+    await assertRejects(
+      () => runAs('authenticated', USER_A, 'select display_name from public.profiles where id = $1', [USER_A]),
+      /permission denied/i,
+      'authenticated profiles read',
+    );
+  });
+
+  it('grants authenticated exactly SELECT and INSERT on matches, and nothing to anon', async () => {
+    const auth = await runAsSuperuser(
+      `select privilege_type
+       from information_schema.role_table_grants
+       where table_schema = 'public'
+         and table_name = 'matches'
+         and grantee = 'authenticated'
+       order by privilege_type`,
+    );
+
+    assert.deepEqual(
+      plain(auth.rows).map((r) => r.privilege_type),
+      ['INSERT', 'SELECT'],
+    );
+
+    const anon = await runAsSuperuser(
+      `select privilege_type
+       from information_schema.role_table_grants
+       where table_schema = 'public'
+         and table_name = 'matches'
+         and grantee = 'anon'
+       order by privilege_type`,
+    );
+
+    assert.deepEqual(plain(anon.rows), []);
+  });
+
+  it('denies authenticated UPDATE and DELETE on matches', async () => {
+    await assertRejects(
+      () => runAs(
+        'authenticated',
+        USER_A,
+        'update public.matches set result = result where player_id = $1',
+        [USER_A],
+      ),
+      /permission denied/i,
+      'matches update',
+    );
+
+    await assertRejects(
+      () => runAs(
+        'authenticated',
+        USER_A,
+        'delete from public.matches where player_id = $1',
+        [USER_A],
+      ),
+      /permission denied/i,
+      'matches delete',
+    );
+  });
+
+  it('gives moves no direct client privileges', async () => {
+    const grants = await runAsSuperuser(
+      `select grantee, privilege_type
+       from information_schema.role_table_grants
+       where table_schema = 'public'
+         and table_name = 'moves'
+         and grantee in ('anon', 'authenticated')
+       order by grantee, privilege_type`,
+    );
+
+    assert.deepEqual(plain(grants.rows), []);
+
+    await assertRejects(
+      () => runAs('authenticated', USER_A, 'select * from public.moves'),
+      /permission denied/i,
+      'authenticated moves read',
+    );
+  });
+
+  it('targets every remaining client application policy to authenticated only', async () => {
+    const res = await runAsSuperuser(
+      `select tablename, policyname, roles::text as roles
+       from pg_policies
+       where schemaname = 'public'
+         and tablename in ('matches', 'moves', 'profiles', 'rooms', 'room_shots')
+       order by tablename, policyname`,
+    );
+
+    const rows = plain(res.rows);
+
+    assert.equal(rows.length, 4);
+    for (const row of rows) {
+      assert.equal(row.roles, '{authenticated}');
+    }
   });
 });
-
 // ============================================================================
 // create_room
 // ============================================================================
