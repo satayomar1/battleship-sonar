@@ -231,11 +231,26 @@ export default function MultiplayerPage() {
                   label="Enemy board"
                 />
 
-                <Battlefield
-                  title="Your Fleet"
-                  board={game.ownBoard}
-                  label="Your board"
-                />
+                <div className="hidden lg:block">
+                  <Battlefield
+                    title="Your Fleet"
+                    board={game.ownBoard}
+                    label="Your board"
+                  />
+                </div>
+
+                <details className="glass w-[min(86vw,360px)] rounded-xl p-3 lg:hidden">
+                  <summary className="cursor-pointer select-none text-center text-xs font-semibold uppercase tracking-widest text-muted">
+                    View Your Fleet
+                  </summary>
+                  <div className="mt-3 flex justify-center">
+                    <Battlefield
+                      title="Your Fleet"
+                      board={game.ownBoard}
+                      label="Your board"
+                    />
+                  </div>
+                </details>
               </div>
             </>
           )}

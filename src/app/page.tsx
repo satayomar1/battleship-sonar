@@ -128,11 +128,26 @@ export default function Home() {
               disabled={!state.playerTurn}
               label="Поле противника — стреляйте по клеткам"
             />
-            <Battlefield
-              title="База · твой флот"
-              board={state.playerFleet.board}
-              label="Ваше поле"
-            />
+            <div className="hidden lg:block">
+              <Battlefield
+                title="База · твой флот"
+                board={state.playerFleet.board}
+                label="Ваше поле"
+              />
+            </div>
+
+            <details className="glass w-[min(86vw,360px)] rounded-xl p-3 lg:hidden">
+              <summary className="cursor-pointer select-none text-center text-xs font-semibold uppercase tracking-widest text-muted">
+                Показать свой флот
+              </summary>
+              <div className="mt-3 flex justify-center">
+                <Battlefield
+                  title="База · твой флот"
+                  board={state.playerFleet.board}
+                  label="Ваше поле"
+                />
+              </div>
+            </details>
           </div>
         </section>
       )}

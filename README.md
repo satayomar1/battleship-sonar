@@ -100,3 +100,18 @@ Next.js / React
               |
               +-- Supabase
               +-- localStorage fallback
+---
+
+## Использованные инструменты и заимствования
+
+Проект разрабатывался в AI-assisted workflow:
+
+- **ChatGPT** — архитектура, планирование, code review, QA, security review и помощь с реализацией
+- **Qoder** — работа с production-кодом и реализация отдельных этапов
+- **Gemini** — независимый UX / technical audit
+- **Figma Make** — дизайн-референс и прототипирование интерфейса
+- **v0** — UI-референсы на раннем этапе
+
+Основные сторонние технологии и библиотеки: **Next.js, React, TypeScript, Tailwind CSS, Supabase, Vitest и Vercel**.
+
+Игровая логика, архитектура Supabase, security-модель, multiplayer flow и Tactical Debrief были интегрированы, проверены и адаптированы специально для Sonar.io. В проекте не используется чужая готовая реализация игры целиком.
