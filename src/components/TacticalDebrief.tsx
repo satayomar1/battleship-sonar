@@ -102,7 +102,7 @@ export default function TacticalDebrief({ stats, moves }: DebriefProps) {
 
           <div className="rounded-xl border border-sonar/30 bg-sonar/5 p-4">
             <h3 className="text-sm font-semibold text-sonar mb-2 uppercase tracking-wider">
-              Советы снарёра
+              Советы снайпера
             </h3>
             <ul className="flex flex-col gap-1.5 text-sm text-ink/90 list-disc pl-5">
               {stats.tips.map((t) => (

@@ -60,6 +60,13 @@ export default function Home() {
         <Link href="/profile" className="mt-1 inline-block text-xs text-sonar/80 hover:text-sonar underline underline-offset-4">
           Профиль и статистика
         </Link>
+        <span className="mx-2 text-muted/50">·</span>
+        <Link
+          href="/multiplayer"
+          className="mt-1 inline-block text-xs text-sonar/80 hover:text-sonar underline underline-offset-4"
+        >
+          Multiplayer
+        </Link>
       </header>
 
       {state.phase === 'placement' && (
