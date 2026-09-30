@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import Battlefield from '../components/Battlefield';
 import TacticalDebrief from '../components/TacticalDebrief';
@@ -15,7 +15,13 @@ const DIFFICULTIES: { id: Difficulty; label: string; hint: string }[] = [
   { id: 'hard', label: 'Адмирал', hint: 'Шахматный поиск и точное добивание' },
 ];
 
+const subscribeHydration = () => () => {};
+
+const useHydrated = () =>
+  useSyncExternalStore(subscribeHydration, () => true, () => false);
+
 export default function Home() {
+  const hydrated = useHydrated();
   const { state, fire, randomize, start, reset, maskedEnemyBoard } = useGame();
   const [difficulty, setDifficulty] = useState<Difficulty>('normal');
   const [copied, setCopied] = useState(false);
@@ -49,6 +55,10 @@ export default function Home() {
       // clipboard unavailable
     }
   };
+
+  if (!hydrated) {
+    return <main className="min-h-screen" aria-busy="true" />;
+  }
 
   return (
     <main className="flex flex-col items-center px-4 py-8 sm:py-12 gap-6 min-h-screen">
@@ -120,7 +130,7 @@ export default function Home() {
             {state.playerTurn ? '▶ ТВОЙ ХОД' : '… ПРОТИВНИК ЦЕЛИТСЯ'}
           </div>
 
-          <div className="flex flex-col lg:flex-row gap-6 lg:gap-12 items-center justify-center">
+          <div className="flex flex-col min-[900px]:flex-row gap-6 min-[900px]:gap-12 items-center justify-center">
             <Battlefield
               title="Радар · враг"
               board={maskedEnemyBoard}
@@ -128,7 +138,7 @@ export default function Home() {
               disabled={!state.playerTurn}
               label="Поле противника — стреляйте по клеткам"
             />
-            <div className="hidden lg:block">
+            <div className="hidden min-[900px]:block">
               <Battlefield
                 title="База · твой флот"
                 board={state.playerFleet.board}
@@ -136,8 +146,8 @@ export default function Home() {
               />
             </div>
 
-            <details className="glass w-[min(86vw,360px)] rounded-xl p-3 lg:hidden">
-              <summary className="cursor-pointer select-none text-center text-xs font-semibold uppercase tracking-widest text-muted">
+            <details className="w-[min(94vw,392px)] min-[900px]:hidden">
+              <summary className="glass block cursor-pointer select-none rounded-xl px-3 py-3 text-center text-xs font-semibold uppercase tracking-widest text-muted">
                 Показать свой флот
               </summary>
               <div className="mt-3 flex justify-center">

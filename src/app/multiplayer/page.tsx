@@ -222,7 +222,7 @@ export default function MultiplayerPage() {
                   : "… OPPONENT TURN"}
               </div>
 
-              <div className="flex flex-col items-center justify-center gap-6 lg:flex-row lg:gap-12">
+              <div className="flex flex-col items-center justify-center gap-6 min-[900px]:flex-row min-[900px]:gap-12">
                 <Battlefield
                   title="Enemy Waters"
                   board={game.enemyBoard}
@@ -231,7 +231,7 @@ export default function MultiplayerPage() {
                   label="Enemy board"
                 />
 
-                <div className="hidden lg:block">
+                <div className="hidden min-[900px]:block">
                   <Battlefield
                     title="Your Fleet"
                     board={game.ownBoard}
@@ -239,8 +239,8 @@ export default function MultiplayerPage() {
                   />
                 </div>
 
-                <details className="glass w-[min(86vw,360px)] rounded-xl p-3 lg:hidden">
-                  <summary className="cursor-pointer select-none text-center text-xs font-semibold uppercase tracking-widest text-muted">
+                <details className="w-[min(94vw,392px)] min-[900px]:hidden">
+                  <summary className="glass block cursor-pointer select-none rounded-xl px-3 py-3 text-center text-xs font-semibold uppercase tracking-widest text-muted">
                     View Your Fleet
                   </summary>
                   <div className="mt-3 flex justify-center">
