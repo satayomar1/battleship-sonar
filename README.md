@@ -100,6 +100,8 @@ Next.js / React
               |
               +-- Supabase
               +-- localStorage fallback
+```
+
 ---
 
 ## Использованные инструменты и заимствования
