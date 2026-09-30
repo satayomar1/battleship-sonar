@@ -1,222 +1,167 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import Battlefield from '../components/Battlefield';
-import { Board, Ship, GamePhase } from '../types/game';
-import { createEmptyBoard, generateRandomBoard, checkShipSunkAndMark } from '../utils/gameHelpers';
+import TacticalDebrief from '../components/TacticalDebrief';
+import { useGame } from '../hooks/useGame';
+import { computeDebrief, formatShareText } from '../engine/debrief';
+import { recordFinishedMatch } from '../lib/matchArchive';
+import { Difficulty } from '../types/game';
+
+const DIFFICULTIES: { id: Difficulty; label: string; hint: string }[] = [
+  { id: 'easy', label: 'Юнга', hint: 'Стреляет наугад' },
+  { id: 'normal', label: 'Мичман', hint: 'Добивает найденные корабли' },
+  { id: 'hard', label: 'Адмирал', hint: 'Шахматный поиск и точное добивание' },
+];
 
 export default function Home() {
-  const [phase, setPhase] = useState<GamePhase>('placement');
-  
-  const [playerBoard, setPlayerBoard] = useState<Board>(createEmptyBoard());
-  const [playerShips, setPlayerShips] = useState<Ship[]>([]);
-  
-  const [enemyBoard, setEnemyBoard] = useState<Board>(createEmptyBoard());
-  const [enemyShips, setEnemyShips] = useState<Ship[]>([]);
-  
-  const [isPlayerTurn, setIsPlayerTurn] = useState<boolean>(true);
-  const [winner, setWinner] = useState<'player' | 'enemy' | null>(null);
+  const { state, fire, randomize, start, reset, maskedEnemyBoard } = useGame();
+  const [difficulty, setDifficulty] = useState<Difficulty>('normal');
+  const [copied, setCopied] = useState(false);
 
+  const won = state.winner === 'player';
+  const debrief = computeDebrief(state.playerMoves);
+
+  const recordedRef = useRef<string | null>(null);
   useEffect(() => {
-    handleRandomize();
-  }, []);
-
-  const handleRandomize = () => {
-    const pData = generateRandomBoard();
-    setPlayerBoard(pData.board);
-    setPlayerShips(pData.ships);
-  };
-
-  const startGame = () => {
-    const eData = generateRandomBoard();
-    setEnemyBoard(eData.board);
-    setEnemyShips(eData.ships);
-    setPhase('playing');
-    setIsPlayerTurn(true);
-    setWinner(null);
-  };
-
-  // Функция для возврата к новой расстановке
-  const restartPlacement = () => {
-    setEnemyBoard(createEmptyBoard());
-    setEnemyShips([]);
-    setWinner(null);
-    handleRandomize();
-    setPhase('placement');
-  }; 
-  // Проверка победы
-  const checkWinCondition = (currentShips: Ship[]) => {
-    return currentShips.every(s => s.isSunk);
-  };
-
-  // Выстрел игрока по врагу
-  const handlePlayerFire = (x: number, y: number) => {
-    if (phase !== 'playing' || !isPlayerTurn || winner) return;
-    const cell = enemyBoard[y][x];
-    if (cell === 'miss' || cell === 'hit' || cell === 'sunk') return;
-
-    const newBoard = [...enemyBoard.map(row => [...row])];
-    let newShips = [...enemyShips];
-
-    if (cell === 'ship') {
-      newBoard[y][x] = 'hit';
-      const result = checkShipSunkAndMark(newBoard, newShips, x, y);
-      newShips = result.ships;
-      
-      setEnemyBoard(newBoard);
-      setEnemyShips(newShips);
-
-      // Проверяем победу игрока
-      if (checkWinCondition(newShips)) {
-        setWinner('player');
-        setPhase('game_over');
-      }
-      // Попал — ходит снова
-    } else {
-      newBoard[y][x] = 'miss';
-      setEnemyBoard(newBoard);
-      setIsPlayerTurn(false); // Промазал — ход бота
-    }
-  };
-
-  // Ход бота (умный поиск вокруг попаданий)
-  useEffect(() => {
-    if (phase === 'playing' && !isPlayerTurn && !winner) {
-      const botTimer = setTimeout(() => {
-        let fired = false;
-        const newBoard = [...playerBoard.map(row => [...row])];
-        let newShips = [...playerShips];
-        
-        while (!fired) {
-          // Ищем раненую, но не потопленную палубу на поле игрока (уровень "Сильный": бот добивает)
-          let target: { x: number, y: number } | null = null;
-          
-          for (let y = 0; y < 10; y++) {
-            for (let x = 0; x < 10; x++) {
-              if (newBoard[y][x] === 'hit') {
-                // Проверяем, жив ли корабль на этой клетке
-                const ship = newShips.find(s => s.positions.some(p => p.x === x && p.y === y));
-                if (ship && !ship.isSunk) {
-                  // Ищем соседнюю пустую или корабельную клетку для добивания
-                  const offsets = [{dx:0, dy:1}, {dx:0, dy:-1}, {dx:1, dy:0}, {dx:-1, dy:0}];
-                  for (const off of offsets) {
-                    const nx = x + off.dx;
-                    const ny = y + off.dy;
-                    if (nx >= 0 && nx < 10 && ny >= 0 && ny < 10) {
-                      if (newBoard[ny][nx] === 'empty' || newBoard[ny][nx] === 'ship') {
-                        target = { x: nx, y: ny };
-                        break;
-                      }
-                    }
-                  }
-                }
-              }
-              if (target) break;
-            }
-            if (target) break;
-          }
-
-          // Если раненых нет — бьем случайно
-          const x = target ? target.x : Math.floor(Math.random() * 10);
-          const y = target ? target.y : Math.floor(Math.random() * 10);
-          const cell = newBoard[y][x];
-
-          if (cell !== 'miss' && cell !== 'hit' && cell !== 'sunk') {
-            if (cell === 'ship') {
-              newBoard[y][x] = 'hit';
-              const result = checkShipSunkAndMark(newBoard, newShips, x, y);
-              newShips = result.ships;
-              
-              setPlayerBoard(newBoard);
-              setPlayerShips(newShips);
-
-              if (checkWinCondition(newShips)) {
-                setWinner('enemy');
-                setPhase('game_over');
-              }
-              // Бот попал — продолжает ходить
-            } else {
-              newBoard[y][x] = 'miss';
-              setPlayerBoard(newBoard);
-              setIsPlayerTurn(true); // Бот промазал — ход тебе
-            }
-            fired = true;
-          }
-        }
-      }, 800);
-      return () => clearTimeout(botTimer);
-    }
-  }, [isPlayerTurn, phase, playerBoard, playerShips, winner]);
-
-  const getMaskedEnemyBoard = () => {
-    return enemyBoard.map(row => 
-      row.map(cell => cell === 'ship' ? 'empty' : cell)
+    if (state.phase !== 'game_over' || !state.winner) return;
+    const key = `${state.startedAt}-${state.winner}`;
+    if (recordedRef.current === key) return;
+    recordedRef.current = key;
+    recordFinishedMatch(
+      state.difficulty,
+      won ? 'win' : 'loss',
+      state.playerMoves,
+      debrief,
+      state.startedAt,
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.phase, state.winner]);
+
+  const copyResult = async () => {
+    const text = formatShareText(won, debrief, `против бота · ${DIFFICULTIES.find((d) => d.id === state.difficulty)?.label ?? ''}`);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard unavailable
+    }
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white flex flex-col items-center py-10 px-4 font-sans">
-      <h1 className="text-4xl font-bold mb-6 text-blue-400 tracking-widest uppercase drop-shadow-[0_0_15px_rgba(96,165,250,0.5)]">
-        Sonar.io
-      </h1>
+    <main className="flex flex-col items-center px-4 py-8 sm:py-12 gap-6 min-h-screen">
+      <header className="text-center">
+        <h1 className="text-3xl sm:text-4xl font-bold tracking-[0.3em] uppercase text-sonar">
+          Sonar<span className="text-ink">.io</span>
+        </h1>
+        <p className="mt-2 text-sm text-muted">Тактический морской бой</p>
+        <Link href="/profile" className="mt-1 inline-block text-xs text-sonar/80 hover:text-sonar underline underline-offset-4">
+          Профиль и статистика
+        </Link>
+      </header>
 
-      {/* Экран расстановки */}
-      {phase === 'placement' && (
-        <div className="flex flex-col items-center">
-          <div className="mb-8 flex gap-4">
-            <button onClick={handleRandomize} className="px-6 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg font-semibold transition-all">
+      {state.phase === 'placement' && (
+        <section className="flex flex-col items-center gap-5" aria-label="Расстановка флота">
+          <div className="glass rounded-2xl p-4 sm:p-5 w-full max-w-md">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3 text-center">
+              Сложность противника
+            </h2>
+            <div className="flex flex-col gap-2">
+              {DIFFICULTIES.map((d) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  onClick={() => setDifficulty(d.id)}
+                  aria-pressed={difficulty === d.id}
+                  className={`btn ${difficulty === d.id ? 'btn-primary' : 'btn-ghost'} justify-between`}
+                >
+                  <span>{d.label}</span>
+                  <span className="text-xs font-normal opacity-70">{d.hint}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <Battlefield
+            title="Твой флот"
+            board={state.playerFleet.board}
+            label="Ваше поле с кораблями"
+          />
+
+          <div className="flex gap-3">
+            <button type="button" className="btn btn-ghost" onClick={randomize}>
               🎲 Перемешать
             </button>
-            <button onClick={startGame} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg font-semibold transition-all shadow-[0_0_15px_rgba(37,99,235,0.5)]">
-              🚀 В бой!
+            <button type="button" className="btn btn-primary" onClick={() => start(difficulty)}>
+              🚀 В бой
             </button>
           </div>
-          <h2 className="mb-4 text-slate-400 font-mono text-sm uppercase tracking-wider">Твой флот</h2>
-          <Battlefield board={playerBoard} onCellClick={() => {}} />
-        </div>
+        </section>
       )}
 
-      {/* Экран игры */}
-      {phase === 'playing' && (
-        <div className="flex flex-col items-center w-full max-w-5xl">
-          <div className="mb-8 px-6 py-2 bg-white/5 rounded-full border border-white/10">
-            <span className={`font-mono font-bold ${isPlayerTurn ? 'text-green-400' : 'text-red-400 animate-pulse'}`}>
-              {isPlayerTurn ? '>>> ТВОЙ ХОД' : '!!! ВРАГ ЦЕЛИТСЯ...'}
-            </span>
+      {state.phase === 'playing' && (
+        <section className="flex flex-col items-center gap-5 w-full" aria-label="Игра">
+          <div
+            className={`px-5 py-2 rounded-full glass font-mono font-bold text-sm tracking-widest ${
+              state.playerTurn ? 'text-kelp' : 'text-coral animate-pulse'
+            }`}
+            role="status"
+            aria-live="polite"
+          >
+            {state.playerTurn ? '▶ ТВОЙ ХОД' : '… ПРОТИВНИК ЦЕЛИТСЯ'}
           </div>
-          
-          <div className="flex flex-col lg:flex-row gap-8 lg:gap-16 w-full justify-center items-center">
-            <div className="flex flex-col items-center">
-              <h2 className="mb-4 text-red-400 font-mono text-sm uppercase tracking-wider">Радар (Враг)</h2>
-              <div className={!isPlayerTurn ? 'opacity-50 pointer-events-none' : ''}>
-                <Battlefield board={getMaskedEnemyBoard()} onCellClick={handlePlayerFire} />
-              </div>
-            </div>
 
-            <div className="flex flex-col items-center">
-              <h2 className="mb-4 text-slate-400 font-mono text-sm uppercase tracking-wider">База (Твой флот)</h2>
-              <div className="opacity-80 pointer-events-none">
-                <Battlefield board={playerBoard} onCellClick={() => {}} />
-              </div>
+          <div className="flex flex-col lg:flex-row gap-6 lg:gap-12 items-center justify-center">
+            <Battlefield
+              title="Радар · враг"
+              board={maskedEnemyBoard}
+              onCellClick={fire}
+              disabled={!state.playerTurn}
+              label="Поле противника — стреляйте по клеткам"
+            />
+            <Battlefield
+              title="База · твой флот"
+              board={state.playerFleet.board}
+              label="Ваше поле"
+            />
+          </div>
+        </section>
+      )}
+
+      {state.phase === 'game_over' && (
+        <section className="flex flex-col items-center gap-5 w-full max-w-xl" aria-label="Результат">
+          <div className="glass rounded-2xl p-6 sm:p-8 text-center w-full">
+            <h2
+              className={`text-2xl sm:text-3xl font-bold uppercase tracking-widest ${
+                won ? 'text-kelp' : 'text-coral'
+              }`}
+            >
+              {won ? '🏆 Победа' : '💀 Поражение'}
+            </h2>
+            <p className="mt-2 text-muted text-sm">
+              {won
+                ? 'Вражеский флот на дне. Разберите партию ниже.'
+                : 'Соперник оказался точнее. Изучите разбор и берите реванш.'}
+            </p>
+            <div className="mt-5 flex flex-wrap gap-3 justify-center">
+              <button type="button" className="btn btn-primary" onClick={reset}>
+                🔄 Новая игра
+              </button>
+              <button type="button" className="btn btn-ghost" onClick={copyResult}>
+                {copied ? '✓ Скопировано' : '📋 Поделиться результатом'}
+              </button>
             </div>
           </div>
-        </div>
+
+          <TacticalDebrief stats={debrief} moves={state.playerMoves} />
+        </section>
       )}
 
-      {/* Экран окончания игры */}
-      {phase === 'game_over' && (
-        <div className="flex flex-col items-center justify-center p-8 bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl">
-          <h2 className={`text-3xl font-bold mb-4 uppercase tracking-widest ${winner === 'player' ? 'text-green-400' : 'text-red-500'}`}>
-            {winner === 'player' ? '🏆 Победа!' : '💀 Поражение флота'}
-          </h2>
-          <p className="text-slate-400 mb-6">
-            {winner === 'player' ? 'Весь вражеский флот отправлен на дно.' : 'Соперник оказался быстрее и точнее.'}
-          </p>
-          <button onClick={restartPlacement} className="px-8 py-3 bg-blue-600 hover:bg-blue-500 rounded-lg font-semibold transition-all shadow-[0_0_20px_rgba(37,99,235,0.6)]">
-            🔄 Новая игра
-          </button>
-        </div>
-      )}
+      <footer className="mt-auto pt-6 text-xs text-muted/70">
+        Корабли не касаются друг друга · вокруг потопленного — промахи
+      </footer>
     </main>
   );
 }

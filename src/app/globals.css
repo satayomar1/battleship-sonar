@@ -1,26 +1,126 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Deep Ocean Glass — design tokens */
+  --bg-deep: #0b1220;
+  --bg-raised: #101a2e;
+  --surface: rgba(148, 184, 255, 0.06);
+  --surface-strong: rgba(148, 184, 255, 0.12);
+  --border-soft: rgba(148, 184, 255, 0.14);
+  --primary: #22d3ee;
+  --primary-soft: rgba(34, 211, 238, 0.16);
+  --hit: #f87171;
+  --hit-strong: rgba(248, 113, 113, 0.28);
+  --success: #34d399;
+  --warning: #fbbf24;
+  --text: #e6edf7;
+  --muted: #8fa3bf;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-deep: var(--bg-deep);
+  --color-raised: var(--bg-raised);
+  --color-glass: var(--surface);
+  --color-glass-strong: var(--surface-strong);
+  --color-line: var(--border-soft);
+  --color-sonar: var(--primary);
+  --color-coral: var(--hit);
+  --color-kelp: var(--success);
+  --color-ink: var(--text);
+  --color-muted: var(--muted);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+body {
+  background:
+    radial-gradient(1200px 600px at 20% -10%, rgba(34, 211, 238, 0.08), transparent 60%),
+    radial-gradient(900px 500px at 85% 110%, rgba(99, 102, 241, 0.1), transparent 55%),
+    var(--bg-deep);
+  color: var(--text);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+.glass {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  backdrop-filter: blur(12px);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.75rem;
+  padding: 0.625rem 1.25rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  border: 1px solid transparent;
+  min-height: 44px;
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.btn-primary {
+  background: var(--primary-soft);
+  border-color: rgba(34, 211, 238, 0.4);
+  color: var(--primary);
+}
+.btn-primary:hover:not(:disabled) {
+  background: rgba(34, 211, 238, 0.28);
+}
+.btn-ghost {
+  background: var(--surface);
+  border-color: var(--border-soft);
+  color: var(--text);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-strong);
+}
+
+.cell {
+  aspect-ratio: 1;
+  border-radius: 0.2rem;
+  border: 1px solid rgba(148, 184, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+  width: 100%;
+  padding: 0;
+  font: inherit;
+}
+.cell-shootable {
+  cursor: pointer;
+  background: rgba(34, 211, 238, 0.05);
+}
+.cell-shootable:hover {
+  background: rgba(34, 211, 238, 0.22);
+  border-color: rgba(34, 211, 238, 0.5);
+}
+.cell-shootable:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+.cell-ship {
+  background: rgba(34, 211, 238, 0.28);
+  border-color: rgba(34, 211, 238, 0.45);
+}
+.cell-miss {
+  background: rgba(143, 163, 191, 0.08);
+}
+.cell-hit {
+  background: var(--hit-strong);
+  border-color: rgba(248, 113, 113, 0.5);
+}
+.cell-sunk {
+  background: rgba(220, 60, 60, 0.4);
+  border-color: rgba(248, 113, 113, 0.7);
 }

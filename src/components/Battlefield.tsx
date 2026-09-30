@@ -1,54 +1,94 @@
 "use client";
 
 import React from 'react';
-import { CellState } from '../types/game';
+import { Board } from '../types/game';
 
 interface BattlefieldProps {
-  board: CellState[][];
-  onCellClick: (x: number, y: number) => void;
+  title: string;
+  board: Board;
+  onCellClick?: (x: number, y: number) => void;
+  disabled?: boolean;
+  label: string;
 }
 
-export default function Battlefield({ board, onCellClick }: BattlefieldProps) {
+const cellDisplay = (cell: Board[number][number]) => {
+  switch (cell) {
+    case 'ship':
+      return <span aria-hidden className="block w-2/3 h-2/3 rounded-sm bg-sonar/60" />;
+    case 'miss':
+      return (
+        <span aria-hidden className="block w-1.5 h-1.5 rounded-full bg-muted/70" />
+      );
+    case 'hit':
+      return (
+        <span aria-hidden className="text-coral font-bold leading-none">✕</span>
+      );
+    case 'sunk':
+      return (
+        <span aria-hidden className="text-white/90 font-bold leading-none">✕</span>
+      );
+    default:
+      return null;
+  }
+};
+
+const cellClass = (cell: Board[number][number], shootable: boolean) => {
+  if (shootable) return 'cell cell-shootable';
+  switch (cell) {
+    case 'ship':
+      return 'cell cell-ship';
+    case 'miss':
+      return 'cell cell-miss';
+    case 'hit':
+      return 'cell cell-hit';
+    case 'sunk':
+      return 'cell cell-sunk';
+    default:
+      return 'cell';
+  }
+};
+
+export default function Battlefield({
+  title,
+  board,
+  onCellClick,
+  disabled = false,
+  label,
+}: BattlefieldProps) {
+  const interactive = Boolean(onCellClick) && !disabled;
   return (
-    <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-xl p-4 shadow-[0_0_30px_rgba(0,0,0,0.5)] inline-block">
-      {/* Сетка 10x10. Размер адаптивный: на мобилке 300px, на ПК 400px */}
-      <div className="grid grid-cols-10 gap-1 w-[300px] h-[300px] sm:w-[400px] sm:h-[400px]">
+    <div className="glass rounded-2xl p-3 sm:p-4 inline-block" role="group" aria-label={label}>
+      <h3 className="mb-2 text-center font-mono text-xs uppercase tracking-widest text-muted">
+        {title}
+      </h3>
+      <div
+        className="grid grid-cols-10 gap-[3px] w-[min(86vw,320px)] sm:w-[360px]"
+        aria-hidden={disabled}
+      >
         {board.map((row, y) =>
           row.map((cell, x) => {
-            // Визуал в зависимости от состояния клетки
-            let cellStyle = "bg-transparent"; 
-            let innerContent = null;
-
-            if (cell === 'ship') {
-              cellStyle = "bg-blue-500/50 border-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.5)]";
-            } else if (cell === 'miss') {
-              // Серая точка
-              innerContent = <div className="w-2 h-2 rounded-full bg-slate-500"></div>;
-            } else if (cell === 'hit') {
-              // Попадание
-              cellStyle = "bg-red-500/40 border-red-400";
-              innerContent = <div className="text-red-400 text-xl font-bold leading-none">×</div>;
-            } else if (cell === 'sunk') {
-              // Потоплен
-              cellStyle = "bg-red-700/60 border-red-500";
-              innerContent = <div className="text-white text-xl font-bold leading-none opacity-80">×</div>;
-            }
-
+            const shootable = interactive && (cell === 'empty' || cell === 'ship');
             return (
-              <div
+              <button
                 key={`${y}-${x}`}
-                onClick={() => onCellClick(x, y)}
-                className={`
-                  border border-white/10 aspect-square rounded-sm 
-                  flex items-center justify-center cursor-pointer 
-                  hover:bg-white/20 hover:border-white/30 transition-all duration-200
-                  ${cellStyle}
-                `}
+                type="button"
+                className={cellClass(cell, shootable)}
+                disabled={!shootable}
+                aria-label={`Клетка ${String.fromCharCode(65 + x)}${y + 1}: ${
+                  cell === 'miss'
+                    ? 'промах'
+                    : cell === 'hit'
+                      ? 'попадание'
+                      : cell === 'sunk'
+                        ? 'потоплен'
+                        : 'неизвестно'
+                }`}
+                onClick={() => onCellClick?.(x, y)}
               >
-                {innerContent}
-              </div>
+                {cellDisplay(cell)}
+              </button>
             );
-          })
+          }),
         )}
       </div>
     </div>
